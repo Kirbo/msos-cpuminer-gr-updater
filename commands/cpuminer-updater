@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+shopt -s expand_aliases
+source ~/.bashrc
+
+# Take the desired version from the first argument.
+CPUMINER_VERSION=${1:?Error version not defined.}
+
+# Take the desired executable name from the second argument.
+#
+# This means that this script will use the `cpuminer-zen2` executable. Read more which
+# executable you should use, here: https://github.com/WyvernTKC/cpuminer-gr-avx2/blob/main/readme.txt
+CPUMINER_COMMAND=${2:?Error, exetutable variation not defined.}
+
+# Get the path to this script
+BASEDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Run the repository updater
+"${BASEDIR}/kirbo-msos-repository-updater"
+
+# Helper function for verbose waiting
+WAIT_FOR_TIME() {
+    WAIT_SECONDS=${1}
+    MESSAGE=${2}
+    MINUS_SECONDS=1
+
+    echo "${MESSAGE}"
+    echo
+    while [ "${WAIT_SECONDS}" -ge 0 ]; do
+        tput cuu1
+        tput el
+        echo "Time remaining: ${WAIT_SECONDS}"
+        sleep ${MINUS_SECONDS}
+        WAIT_SECONDS=$((WAIT_SECONDS - MINUS_SECONDS))
+    done
+}
+
+# If "cpuminer-opt" directory doesn't exist
+if [ ! -d "/home/minerstat/minerstat-os/clients/cpuminer-opt" ]; then
+    # Start mining
+    echo "(Re)starting mining, if not already"
+    mstart &
+    echo
+
+    # Wait for a while for miner to start
+    WAIT_FOR_TIME 3 "Waiting for minerstart to start mining..."
+
+    # Wait until the "cpuminer-opt" directory exists
+    echo -n "Waiting for 'cpuminer-opt' to be downloaded "
+    while [ ! -d "/home/minerstat/minerstat-os/clients/cpuminer-opt" ]; do
+        sleep 1
+        echo -n "."
+    done
+    echo " Done"
+
+    # Check the folder size and continue once it hasn't increased
+    PREVIOUS_DIR_SIZE=$(cd /home/minerstat/minerstat-os/clients/cpuminer-opt && du -sc)
+    DIR_SIZE=0
+    while [ "${PREVIOUS_DIR_SIZE}" != "${DIR_SIZE}" ]; do
+        DIR_SIZE=$(cd /home/minerstat/minerstat-os/clients/cpuminer-opt && du -sc)
+        sleep 1
+        echo -n "."
+        PREVIOUS_DIR_SIZE=${DIR_SIZE}
+    done
+    echo " Done"
+
+    # Wait for a while for miner to finish its initializations & stuff..
+    WAIT_FOR_TIME 10 "Waiting for minerstart to finish initialization..."
+fi
+
+# Navigates to "tmp" folder
+cd /tmp
+
+# Downloads the desired version of "cpuminer-gr"
+echo "Downloading cpuminer-gr-${CPUMINER_VERSION}"
+wget "https://github.com/WyvernTKC/cpuminer-gr-avx2/releases/download/${CPUMINER_VERSION}/cpuminer-gr-${CPUMINER_VERSION}-x86_64_linux.tar.gz"
+
+# Extracts the archive
+echo "Extracting cpuminer-gr-${CPUMINER_VERSION}"
+tar -xvf "cpuminer-gr-${CPUMINER_VERSION}-x86_64_linux.tar.gz" "cpuminer-gr-${CPUMINER_VERSION}-x86_64_linux"
+
+# Stop mining
+echo "Stopping mining.."
+mstop
+echo -e "\033[0m"
+
+# Wait for a while for the miner to stop mining..
+WAIT_FOR_TIME 3 "Waiting for minerstart to stop mining..."
+for SCREEN_SESSION in $(screen -list | grep "minerstat-console" | awk '{print $1}'); do
+    screen -X -S "${SCREEN_SESSION}" quit
+done
+
+echo
+
+# Removes the old executable
+echo "Removing old 'cpuminer-opt/cpuminer' exetutable"
+rm /home/minerstat/minerstat-os/clients/cpuminer-opt/cpuminer
+
+# Copies the desired new executable
+echo "Copying the new 'cpuminer-${CPUMINER_COMMAND}' to 'cpuminer-opt/cpuminer'"
+cp "/tmp/cpuminer-gr-${CPUMINER_VERSION}-x86_64_linux/binaries/cpuminer-${CPUMINER_COMMAND}" /home/minerstat/minerstat-os/clients/cpuminer-opt/cpuminer
+
+# Removes the downloaded/extracted archive of "cpuminer-gr"
+echo "Removing the 'cpuminer-gr-${CPUMINER_VERSION}-x86_64_linux' files"
+rm -rf /tmp/cpuminer-gr-*
+
+# Start/continue mining
+echo "Starting mining.."
+mstart &
+
+# Wait for a while for miner to start mining
+WAIT_FOR_TIME 3 "Waiting for minerstart to start mining..."
+echo
+echo -e "\033[0m"
+echo "All done!"

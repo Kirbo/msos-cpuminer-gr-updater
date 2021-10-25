@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Get the path to this script
+BASEDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Navigate to the root directory of this repository
+cd "${BASEDIR}"
+
+# Pull changes
+git pull --rebase
